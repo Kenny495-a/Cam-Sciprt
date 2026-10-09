@@ -1,37 +1,50 @@
 
--- SIMPLE HEAD CAMERA | FULL COMBINED
--- StarterPlayer > StarterPlayerScripts
--- Works with touch: tap the button to toggle.
+-- KENNY HEAD CAMERA | FULL COMBINED
+-- Place in StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local GUI_NAME = "KennyHeadCamera"
+local RENDER_NAME = "KennyHeadCameraUpdate"
+
+-- CAMERA SETTINGS
+local FORWARD = 8
+local SIDE = 0
+local UP = 0
+local CAMERA_FOV = 80
+
 local enabled = false
-local cameraConnection
+local savedFOV = nil
 
--- Camera placement relative to the head:
--- Positive forward = in front of the face.
--- Adjust these values to move the camera.
-local FORWARD = 1.5
-local SIDE = -0.8
-local UP = 0.35
+RunService:UnbindFromRenderStep(RENDER_NAME)
 
--- Create the single toggle button
+local oldGui = playerGui:FindFirstChild(GUI_NAME)
+if oldGui then
+    oldGui:Destroy()
+end
+
+-- CREATE BUTTON
 local gui = Instance.new("ScreenGui")
-gui.Name = "SimpleHeadCamera"
+gui.Name = GUI_NAME
 gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
+gui.DisplayOrder = 100
+gui.Parent = playerGui
 
 local button = Instance.new("TextButton")
-button.Name = "HeadCameraToggle"
-button.Size = UDim2.fromOffset(155, 46)
-button.Position = UDim2.new(0.5, -77, 0.78, 0)
+button.Name = "CameraToggle"
+button.AnchorPoint = Vector2.new(0.5, 0.5)
+button.Size = UDim2.fromOffset(175, 50)
+button.Position = UDim2.new(0.5, 0, 0.72, 0)
 button.BackgroundColor3 = Color3.fromRGB(35, 120, 255)
 button.TextColor3 = Color3.new(1, 1, 1)
 button.Text = "HEAD CAM: OFF"
 button.TextSize = 15
 button.Font = Enum.Font.GothamBold
+button.Active = true
 button.AutoButtonColor = true
 button.Parent = gui
 
@@ -40,101 +53,128 @@ corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = button
 
 local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(255, 255, 255)
-stroke.Transparency = 0.65
+stroke.Color = Color3.new(1, 1, 1)
+stroke.Transparency = 0.6
 stroke.Thickness = 1
 stroke.Parent = button
 
-local function setButton()
-	if enabled then
-		button.Text = "HEAD CAM: ON"
-		button.BackgroundColor3 = Color3.fromRGB(35, 190, 100)
-	else
-		button.Text = "HEAD CAM: OFF"
-		button.BackgroundColor3 = Color3.fromRGB(35, 120, 255)
-	end
+local function updateButton()
+    if enabled then
+        button.Text = "HEAD CAM: ON"
+        button.BackgroundColor3 = Color3.fromRGB(25, 180, 95)
+    else
+        button.Text = "HEAD CAM: OFF"
+        button.BackgroundColor3 = Color3.fromRGB(35, 120, 255)
+    end
 end
 
 local function stopCamera()
-	enabled = false
+    enabled = false
+    RunService:UnbindFromRenderStep(RENDER_NAME)
 
-	if cameraConnection then
-		cameraConnection:Disconnect()
-		cameraConnection = nil
-	end
+    local camera = workspace.CurrentCamera
+    local character = player.Character
+    local humanoid = character
+        and character:FindFirstChildOfClass("Humanoid")
 
-	local camera = workspace.CurrentCamera
-	local character = player.Character
-	local humanoid = character
-		and character:FindFirstChildOfClass("Humanoid")
+    if camera then
+        camera.CameraType = Enum.CameraType.Custom
 
-	if camera then
-		camera.CameraType = Enum.CameraType.Custom
-		if humanoid then
-			camera.CameraSubject = humanoid
-		end
-	end
+        if humanoid then
+            camera.CameraSubject = humanoid
+        end
 
-	setButton()
+        if savedFOV then
+            camera.FieldOfView = savedFOV
+            savedFOV = nil
+        end
+    end
+
+    updateButton()
 end
 
 local function startCamera()
-	local camera = workspace.CurrentCamera
-	local character = player.Character
-	local head = character and character:FindFirstChild("Head")
+    local camera = workspace.CurrentCamera
+    local character = player.Character
+    local head = character and character:FindFirstChild("Head")
 
-	if not camera or not head then
-		button.Text = "WAIT FOR CHARACTER"
-		task.wait(1)
-		setButton()
-		return
-	end
+    if not camera or not head then
+        button.Text = "WAIT FOR CHARACTER"
+        task.delay(1.5, function()
+            if button.Parent then
+                updateButton()
+            end
+        end)
+        return
+    end
 
-	enabled = true
+    if not savedFOV then
+        savedFOV = camera.FieldOfView
+    end
 
-	if cameraConnection then
-		cameraConnection:Disconnect()
-	end
+    enabled = true
+    updateButton()
 
-	camera.CameraType = Enum.CameraType.Scriptable
-	setButton()
+    RunService:UnbindFromRenderStep(RENDER_NAME)
 
-	cameraConnection = RunService:BindToRenderStep
-		and nil or nil
+    RunService:BindToRenderStep(
+        RENDER_NAME,
+        Enum.RenderPriority.Camera.Value + 1,
+        function()
+            if not enabled then return end
 
-	cameraConnection = RunService.RenderStepped:Connect(function()
-		if not enabled then return end
+            local currentCamera = workspace.CurrentCamera
+            local currentCharacter = player.Character
+            local currentHead = currentCharacter
+                and currentCharacter:FindFirstChild("Head")
 
-		camera = workspace.CurrentCamera
-		character = player.Character
-		head = character and character:FindFirstChild("Head")
+            if not currentCamera or not currentHead then
+                return
+            end
 
-		if not camera or not head then return end
+            local headCF = currentHead.CFrame
 
-		-- Use the head's own orientation, not the character's back.
-		local headCF = head.CFrame
-		local position =
-			headCF.Position
-			+ headCF.LookVector * FORWARD
-			+ headCF.RightVector * SIDE
-			+ headCF.UpVector * UP
+            -- Centered horizontally and vertically on the head.
+            local cameraPosition =
+                headCF.Position
+                + headCF.LookVector * FORWARD
+                + headCF.RightVector * SIDE
+                + headCF.UpVector * UP
 
-		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = CFrame.lookAt(position, headCF.Position)
-	end)
+            currentCamera.CameraType = Enum.CameraType.Scriptable
+            currentCamera.FieldOfView = CAMERA_FOV
+            currentCamera.CFrame = CFrame.lookAt(
+                cameraPosition,
+                headCF.Position
+            )
+        end
+    )
 end
 
 button.Activated:Connect(function()
-	if enabled then
-		stopCamera()
-	else
-		startCamera()
-	end
+    if enabled then
+        stopCamera()
+    else
+        startCamera()
+    end
 end)
 
-player.CharacterAdded:Connect(function()
-	if enabled then
-		task.wait(0.5)
-		startCamera()
-	end
+player.CharacterAdded:Connect(function(character)
+    task.wait(1)
+
+    if enabled then
+        startCamera()
+    else
+        local camera = workspace.CurrentCamera
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+        if camera and humanoid then
+            camera.CameraType = Enum.CameraType.Custom
+            camera.CameraSubject = humanoid
+        end
+    end
+end)
+
+gui.Destroying:Connect(function()
+    stopCamera()
 end)
